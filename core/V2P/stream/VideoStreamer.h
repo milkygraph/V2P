@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "IStreamStrategy.h"
+#include "VideoFrame.h" // <-- Include this
 
 /**
  * @brief The main context class that the client interacts with.
@@ -16,8 +17,14 @@ public:
     ~VideoStreamer();
 
     bool open(const std::string& url) const;
-    AVFrame* consumeFrame() const;
-    void freeFrame(AVFrame* frame) const;
+
+    // Updated method signature
+    bool getNextVideoFrame(VideoFrame& outFrame) const;
+
+    double getClock() const;
+
+    void setAudioCallback(AudioCallback callback) const;
+
     void close() const;
 
 private:

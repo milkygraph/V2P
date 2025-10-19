@@ -1,4 +1,5 @@
 #include "VideoStreamer.h"
+// No need to include AVFrame here anymore
 
 VideoStreamer::VideoStreamer(std::unique_ptr<IStreamStrategy> strategy)
     : streamStrategy(std::move(strategy)) {}
@@ -15,24 +16,33 @@ bool VideoStreamer::open(const std::string& url) const
     return false;
 }
 
-AVFrame* VideoStreamer::consumeFrame() const
+// Updated implementation
+bool VideoStreamer::getNextVideoFrame(VideoFrame& outFrame) const
 {
     if (streamStrategy) {
-        return streamStrategy->consumeFrame();
+        return streamStrategy->getNextVideoFrame(outFrame);
     }
-    return nullptr;
+    return false;
 }
 
-void VideoStreamer::freeFrame(AVFrame* frame) const
+double VideoStreamer::getClock() const
 {
     if (streamStrategy) {
-        streamStrategy->freeFrame(frame);
+        return streamStrategy->getClock();
     }
+    return 0.0;
 }
 
 void VideoStreamer::close() const
 {
     if (streamStrategy) {
         streamStrategy->close();
+    }
+}
+
+void VideoStreamer::setAudioCallback(AudioCallback callback) const
+{
+    if (streamStrategy) {
+        streamStrategy->setAudioCallback(std::move(callback));
     }
 }

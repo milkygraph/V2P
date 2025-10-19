@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <vector>
 #include <libavutil/pixfmt.h>
 #include <libavutil/rational.h>
 
