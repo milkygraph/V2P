@@ -1,5 +1,6 @@
 #include "VideoStreamFactory.h"
 #include "M3U8StreamStrategy.h"
+#include <iostream>
 
 std::unique_ptr<VideoStreamer> VideoStreamFactory::createVideoStreamer(const std::string& url)
 {
@@ -15,6 +16,7 @@ std::unique_ptr<VideoStreamer> VideoStreamFactory::createVideoStreamer(const std
 
     if (streamer != nullptr)
     {
+        std::cout << "Opening stream with URL: " << url << std::endl;
         streamer->open(url);
         return streamer;
     }

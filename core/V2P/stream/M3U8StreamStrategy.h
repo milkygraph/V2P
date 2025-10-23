@@ -1,7 +1,7 @@
 #pragma once
 
 #include "IStreamStrategy.h"
-#include "VideoFrame.h" // <-- Include this
+#include "VideoFrame.h"
 
 // Forward-declare FFmpeg types
 struct AVFormatContext;
@@ -25,7 +25,7 @@ public:
     void setAudioCallback(AudioCallback callback) override;
 
     // Updated method signature
-    bool getNextVideoFrame(VideoFrame& outFrame) override;
+    PacketType processNextFrame(VideoFrame& outFrame) override;
 
     // Get the clock from audio stream
     double getClock() override;
@@ -40,6 +40,7 @@ private:
     void closeAudioStream();
 
     void handleAudioPacket(AVPacket* packet);
+    void handleVideoPacket(AVPacket* packet, AVFrame* yuvFrame, VideoFrame& outFrame);
 
     // Video members
     AVFormatContext* formatContext;

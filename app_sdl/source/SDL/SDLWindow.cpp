@@ -116,7 +116,7 @@ void SDLWindow::updateFrame() {
     VideoFrame frame;
     // This function processes audio (via your callback) while
     // it searches for the next video frame.
-    if (m_streamer->getNextVideoFrame(frame) && !frame.data.empty()) {
+    if (m_streamer->getNextVideoFrame(frame)) {
         double video_timestamp = frame.timestamp;
 
         // Get the timestamp of the last *decoded* audio frame

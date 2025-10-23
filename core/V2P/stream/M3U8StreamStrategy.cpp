@@ -1,4 +1,5 @@
 #include "M3U8StreamStrategy.h"
+#include "V2P/stream/IStreamStrategy.h"
 #include <iostream>
 
 extern "C" {
@@ -248,9 +249,9 @@ void M3U8StreamStrategy::closeAudioStream() {
 }
 
 
-bool M3U8StreamStrategy::getNextVideoFrame(VideoFrame& outFrame) {
+PacketType M3U8StreamStrategy::processNextFrame(VideoFrame& outFrame) {
     if (!formatContext || !videoCodecCtx || !swsContext) {
-        return false;
+        return PacketType::ERROR;
     }
 
     AVPacket* packet = av_packet_alloc();
@@ -258,47 +259,51 @@ bool M3U8StreamStrategy::getNextVideoFrame(VideoFrame& outFrame) {
 
     // This loop now handles BOTH audio and video
     while (av_read_frame(formatContext, packet) >= 0) {
-
         if (packet->stream_index == videoStreamIndex) {
-            // --- VIDEO PACKET ---
-            if (avcodec_send_packet(videoCodecCtx, packet) == 0) {
-                int ret = avcodec_receive_frame(videoCodecCtx, yuvFrame);
+            handleVideoPacket(packet, yuvFrame, outFrame);
 
-                if (ret == 0) {
-                    // --- We have a video frame! ---
-                    sws_scale(
-                        swsContext,
-                        yuvFrame->data, yuvFrame->linesize,
-                        0, videoHeight,
-                        rgbaFrame->data, rgbaFrame->linesize
-                    );
-
-                    outFrame.width = videoWidth;
-                    outFrame.height = videoHeight;
-                    outFrame.timestamp = (double)yuvFrame->pts * av_q2d(videoStream->time_base);
-
-                    int bufferSize = videoWidth * videoHeight * 4; // RGBA
-                    outFrame.data.resize(bufferSize);
-                    memcpy(outFrame.data.data(), rgbaBuffer, bufferSize);
-
-                    av_packet_unref(packet);
-                    av_packet_free(&packet);
-                    av_frame_free(&yuvFrame);
-                    return true; // We return to the main loop to render
-                }
-            }
+            // reutrn to the main thread for handling this video frame
+            av_packet_unref(packet);
+            av_packet_free(&packet);
+            av_frame_free(&yuvFrame);
+            return PacketType::VIDEO;
         }
-        else if (packet->stream_index == audioStreamIndex) {
+        else if (packet->stream_index == audioStreamIndex && isAudioEnabled) {
             handleAudioPacket(packet);
+            av_packet_unref(packet);
+            return PacketType::AUDIO;
         }
-
-        av_packet_unref(packet);
     }
 
     // End of stream or error
     av_packet_free(&packet);
     av_frame_free(&yuvFrame);
-    return false;
+    return PacketType::ERROR;
+}
+
+void M3U8StreamStrategy::handleVideoPacket(AVPacket* packet, AVFrame* yuvFrame, VideoFrame& outFrame) {
+    // --- VIDEO PACKET ---
+    if (avcodec_send_packet(videoCodecCtx, packet) == 0) {
+        int ret = avcodec_receive_frame(videoCodecCtx, yuvFrame);
+
+        if (ret == 0) {
+            // --- We have a video frame! ---
+            sws_scale(
+                swsContext,
+                yuvFrame->data, yuvFrame->linesize,
+                0, videoHeight,
+                rgbaFrame->data, rgbaFrame->linesize
+            );
+
+            outFrame.width = videoWidth;
+            outFrame.height = videoHeight;
+            outFrame.timestamp = (double)yuvFrame->pts * av_q2d(videoStream->time_base);
+
+            int bufferSize = videoWidth * videoHeight * 4; // RGBA
+            outFrame.data.resize(bufferSize);
+            memcpy(outFrame.data.data(), rgbaBuffer, bufferSize);
+        }
+    }
 }
 
 void M3U8StreamStrategy::handleAudioPacket(AVPacket* packet) {
@@ -357,8 +362,6 @@ void M3U8StreamStrategy::handleAudioPacket(AVPacket* packet) {
 
     av_frame_free(&frame);
 }
-
-
 
 void M3U8StreamStrategy::close() {
     closeVideoStream();

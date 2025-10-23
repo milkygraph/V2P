@@ -2,7 +2,10 @@
 
 #include <string>
 #include <functional>
-#include "VideoFrame.h" // <-- Include the new struct
+
+#include "V2P/stream/Packet.h"
+#include "V2P/stream/VideoFrame.h"
+#include "V2P/utils/ThreadSafeFrameQueue.h"
 
 
 using AudioCallback = std::function<bool(uint8_t* data, int size)>;
@@ -33,7 +36,7 @@ public:
      * @param outFrame [out] The VideoFrame struct to be filled with data.
      * @return True on success, false on error or end-of-stream.
      */
-    virtual bool getNextVideoFrame(VideoFrame& outFrame) = 0;
+    virtual PacketType processNextFrame(VideoFrame& outFrame) = 0;
 
     /**
      * @brief Gets the current playback clock in milliseconds.
@@ -46,6 +49,11 @@ public:
      */
     virtual void close() = 0;
 
-    // The freeFrame() method is no longer needed,
-    // as VideoFrame manages its own memory via std::vector.
+    void enableAudio() { isAudioEnabled = true; }
+    void disableAudio() { isAudioEnabled = false; }
+private:
+    ThreadSafeFrameQueue frameQueue;
+
+protected:
+    bool isAudioEnabled = false;
 };

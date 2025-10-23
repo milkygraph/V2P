@@ -2,9 +2,10 @@
 
 #include <string>
 #include <memory>
+#include <thread>
 
 #include "IStreamStrategy.h"
-#include "VideoFrame.h" // <-- Include this
+#include "VideoFrame.h"
 
 /**
  * @brief The main context class that the client interacts with.
@@ -16,17 +17,27 @@ public:
     VideoStreamer(std::unique_ptr<IStreamStrategy> strategy);
     ~VideoStreamer();
 
-    bool open(const std::string& url) const;
+    bool open(const std::string& url);
 
-    // Updated method signature
-    bool getNextVideoFrame(VideoFrame& outFrame) const;
+    bool getNextVideoFrame(VideoFrame& outFrame);
 
     double getClock() const;
 
     void setAudioCallback(AudioCallback callback) const;
 
-    void close() const;
+    void close();
+
+    void enableAudio() { streamStrategy->enableAudio(); }
+    void disableAudio() { streamStrategy->disableAudio(); }
 
 private:
     std::unique_ptr<IStreamStrategy> streamStrategy;
+
+    void run(); // worker thread function
+    bool isOpen = false;
+
+    ThreadSafeFrameQueue videoQueue; // The bridge
+    std::thread thread;
+    std::atomic<bool> isRunning;
+    std::atomic<double> audioClock;
 };
