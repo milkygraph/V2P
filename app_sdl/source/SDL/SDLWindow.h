@@ -3,6 +3,8 @@
 #include <string>
 #include <memory>
 #include <SDL2/SDL.h>
+#include <unordered_map>
+#include <vector>
 
 class VideoStreamer;
 struct VideoFrame;
@@ -24,12 +26,13 @@ private:
     // SDL members
     SDL_Window* m_Window = nullptr;
     SDL_Renderer* m_Renderer = nullptr;
-    SDL_Texture* m_videoTexture = nullptr;
+
     SDL_AudioDeviceID m_audioDeviceID = 0;
     SDL_AudioSpec m_audioSpec = {};
 
-    // Engine/State members
-    std::unique_ptr<VideoStreamer> m_streamer;
+    std::vector<std::unique_ptr<VideoStreamer>> m_streamers;
+    std::unordered_map<VideoStreamer*, SDL_Texture*> m_videoTextures;
+
     Uint32 m_playbackStartTime = 0;
     bool m_keepWindowOpen = true;
 };

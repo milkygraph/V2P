@@ -55,16 +55,16 @@ SDLWindow::SDLWindow(const std::string& title, int minWidth, int minHeight) {
     }
 
     const std::string videoUrl = "https://fast-tailor.3catdirectes.cat/v1/channel/ccma-channel2/hls.m3u8";
-    m_streamer = VideoStreamFactory::createVideoStreamer(videoUrl);
+    auto streamer = VideoStreamFactory::createVideoStreamer(videoUrl);
 
-    if (!m_streamer) {
+    if (!streamer) {
         std::cout << "Failed to create streamer for URL: " << videoUrl << std::endl;
         m_keepWindowOpen = false;
     } else {
         std::cout << "Streamer created for: " << videoUrl << std::endl;
     }
 
-    m_streamer->setAudioCallback([this](uint8_t* data, int size) -> bool {
+    streamer->setAudioCallback([this](uint8_t* data, int size) -> bool {
         // Queue audio data to SDL
         if (SDL_QueueAudio(m_audioDeviceID, data, size) < 0) {
             std::cerr << "Failed to queue audio data: " << SDL_GetError() << std::endl;
@@ -72,6 +72,8 @@ SDLWindow::SDLWindow(const std::string& title, int minWidth, int minHeight) {
         }
         return true;
     });
+
+    m_streamers.push_back(std::move(streamer));
 }
 
 SDLWindow::~SDLWindow() {
@@ -79,8 +81,9 @@ SDLWindow::~SDLWindow() {
         SDL_CloseAudioDevice(m_audioDeviceID);
     }
 
-    if (m_videoTexture) {
-        SDL_DestroyTexture(m_videoTexture);
+    for (auto& pair : m_videoTextures) {
+        if (pair.second)
+            SDL_DestroyTexture(pair.second);
     }
     if (m_Renderer) {
         SDL_DestroyRenderer(m_Renderer);
@@ -109,58 +112,57 @@ void SDLWindow::handleEvents() {
 }
 
 void SDLWindow::updateFrame() {
-    if (!m_streamer) return;
+    if (m_streamers.empty()) return;
 
     VideoFrame frame;
-    // This function processes audio (via your callback) while
-    // it searches for the next video frame.
-    if (m_streamer->getNextVideoFrame(frame)) {
-        double video_timestamp = frame.timestamp;
-        if (video_timestamp == 0.0) return;
+    for (auto& streamer : m_streamers) {
+        // This function processes audio (via your callback) while
+        // it searches for the next video frame.
+        if (streamer->getNextVideoFrame(frame)) {
+            double video_timestamp = frame.timestamp;
+            if (video_timestamp == 0.0) return;
 
-        double audio_clock = m_streamer->getClock();
-        Uint32 buffered_bytes = SDL_GetQueuedAudioSize(m_audioDeviceID);
-        int bytes_per_second = m_audioSpec.freq * m_audioSpec.channels * 2;
-        double buffered_seconds = (double)buffered_bytes / (double)bytes_per_second;
+            double audio_clock = streamer->getClock();
+            Uint32 buffered_bytes = SDL_GetQueuedAudioSize(m_audioDeviceID);
+            int bytes_per_second = m_audioSpec.freq * m_audioSpec.channels * 2;
+            double buffered_seconds = (double)buffered_bytes / (double)bytes_per_second;
 
-        double actual_audio_time = audio_clock - buffered_seconds;
-        double delay = video_timestamp - actual_audio_time;
+            double actual_audio_time = audio_clock - buffered_seconds;
+            double delay = video_timestamp - actual_audio_time;
 
-        std::cout << "Video TS: " << video_timestamp
-                  << " | Audio TS: " << actual_audio_time
-                  << " | Delay: " << delay << " seconds." << std::endl;
+            const double SMALL_EARLY_THRESHOLD = 0.010;
+            const double DROP_LATE_THRESHOLD    = -0.050;
+            const double MAX_WAIT_MS            = 50.0;
 
-        const double SMALL_EARLY_THRESHOLD = 0.010;
-        const double DROP_LATE_THRESHOLD    = -0.050;
-        const double MAX_WAIT_MS            = 50.0;
+            if (delay > SMALL_EARLY_THRESHOLD) {
+                // Wait for the audio to catch up
+                double wait_ms = delay * 1000.0;
+                if (wait_ms > MAX_WAIT_MS) wait_ms = MAX_WAIT_MS;
+                SDL_Delay((Uint32)wait_ms);
+            } else if (delay < -DROP_LATE_THRESHOLD) { // Video is > 100ms late?
+                // This frame is too old, drop it and get the next one
+                std::cout << "Dropping late video frame to catch up." << std::endl;
+                return;
+            }
 
-        if (delay > SMALL_EARLY_THRESHOLD) {
-            // Wait for the audio to catch up
-            double wait_ms = delay * 1000.0;
-            if (wait_ms > MAX_WAIT_MS) wait_ms = MAX_WAIT_MS;
-            SDL_Delay((Uint32)wait_ms);
-        } else if (delay < -DROP_LATE_THRESHOLD) { // Video is > 100ms late?
-            // This frame is too old, drop it and get the next one
-            std::cout << "Dropping late video frame to catch up." << std::endl;
-            return;
-        }
-        // If we're here, the frame is in sync (or only slightly late), so we render it.
+            // If we're here, the frame is in sync (or only slightly late), so we render it.
+            auto videoTexture = m_videoTextures[streamer.get()];
 
-        if (!m_videoTexture) {
-            m_videoTexture = SDL_CreateTexture(m_Renderer,
-                                             SDL_PIXELFORMAT_RGBA32,
-                                             SDL_TEXTUREACCESS_STREAMING,
-                                             frame.width, frame.height);
-            if (m_videoTexture) {
-                SDL_SetWindowSize(m_Window, frame.width, frame.height);
+            if (!videoTexture) {
+                videoTexture = SDL_CreateTexture(m_Renderer,
+                                                   SDL_PIXELFORMAT_RGBA32,
+                                                   SDL_TEXTUREACCESS_STREAMING,
+                                                   frame.width, frame.height);
+                m_videoTextures[streamer.get()] = videoTexture;
+                if (videoTexture) {
+                    SDL_SetWindowSize(m_Window, frame.width, frame.height);
+                }
+            }
+
+            if (videoTexture) {
+                SDL_UpdateTexture(videoTexture, nullptr, frame.data.data(), frame.width * 4);
             }
         }
-
-        if (m_videoTexture) {
-            SDL_UpdateTexture(m_videoTexture, nullptr, frame.data.data(), frame.width * 4);
-        }
-    } else {
-        m_keepWindowOpen = false; // Stream ended
     }
 }
 
@@ -168,8 +170,19 @@ void SDLWindow::render() {
     SDL_SetRenderDrawColor(m_Renderer, 0, 0, 0, 255);
     SDL_RenderClear(m_Renderer);
 
-    if (m_videoTexture) {
-        SDL_RenderCopy(m_Renderer, m_videoTexture, nullptr, nullptr);
+    for (auto& pair : m_videoTextures) {
+        SDL_Texture* tex = pair.second;
+        if (!tex) continue;
+
+        SDL_Rect dst;
+        dst.x = 0;
+        dst.y = 0;
+        int w, h;
+        SDL_GetRendererOutputSize(m_Renderer, &w, &h);
+        dst.w = w;
+        dst.h = h;
+
+        SDL_RenderCopy(m_Renderer, tex, nullptr, &dst);
     }
 
     SDL_RenderPresent(m_Renderer);

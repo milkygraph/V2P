@@ -21,9 +21,12 @@ public:
 
     bool getNextVideoFrame(VideoFrame& outFrame);
 
+    bool updateFrame(VideoFrame& outFrame, uint32_t bufferedBytes, int bytesPerSecond);
+
     double getClock() const;
 
     void setAudioCallback(AudioCallback callback) const;
+
 
     void close();
 
