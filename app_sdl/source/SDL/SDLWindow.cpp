@@ -1,5 +1,6 @@
 #include "SDLWindow.h"
 
+#include <SDL_audio.h>
 #include <iostream>
 #include <V2P/stream/VideoStreamFactory.h>
 #include <V2P/stream/VideoFrame.h>
@@ -33,7 +34,7 @@ SDLWindow::SDLWindow(const std::string& title, int minWidth, int minHeight) {
         return;
     }
 
-    SDL_AudioSpec desiredSpec, actualSpec;
+    SDL_AudioSpec desiredSpec;
     SDL_zero(desiredSpec);
 
     desiredSpec.freq = 44100;
@@ -43,7 +44,7 @@ SDLWindow::SDLWindow(const std::string& title, int minWidth, int minHeight) {
     desiredSpec.callback = nullptr;
 
     // Note: A "real" app would pass this ID to the engine
-    m_audioDeviceID = SDL_OpenAudioDevice(nullptr, 0, &desiredSpec, &actualSpec, 0);
+    m_audioDeviceID = SDL_OpenAudioDevice(nullptr, 0, &desiredSpec, &m_audioSpec, 0);
 
     if (m_audioDeviceID == 0) {
         std::cerr << "Failed to open audio device: " << SDL_GetError() << std::endl;
@@ -64,9 +65,6 @@ SDLWindow::SDLWindow(const std::string& title, int minWidth, int minHeight) {
     }
 
     m_streamer->setAudioCallback([this](uint8_t* data, int size) -> bool {
-        if (m_audioDeviceID == 0) {
-            return false; // No audio device
-        }
         // Queue audio data to SDL
         if (SDL_QueueAudio(m_audioDeviceID, data, size) < 0) {
             std::cerr << "Failed to queue audio data: " << SDL_GetError() << std::endl;
@@ -118,37 +116,36 @@ void SDLWindow::updateFrame() {
     // it searches for the next video frame.
     if (m_streamer->getNextVideoFrame(frame)) {
         double video_timestamp = frame.timestamp;
+        if (video_timestamp == 0.0) return;
 
-        // Get the timestamp of the last *decoded* audio frame
-        // (Assuming m_streamer has getAudioClock() that delegates to the strategy)
-        double audio_clock = m_streamer->getClock(); 
-
-        // Get how many bytes are left in the SDL buffer (not yet played)
+        double audio_clock = m_streamer->getClock();
         Uint32 buffered_bytes = SDL_GetQueuedAudioSize(m_audioDeviceID);
-
-        // Calculate how many *seconds* of audio that represents
-        // (44100 Hz * 2 channels * 2 bytes/sample)
-        int bytes_per_second = 44100 * 2; // This must match your desiredSpec
+        int bytes_per_second = m_audioSpec.freq * m_audioSpec.channels * 2;
         double buffered_seconds = (double)buffered_bytes / (double)bytes_per_second;
 
-        // The *actual* playback time is the last decoded time MINUS what's still in the buffer
         double actual_audio_time = audio_clock - buffered_seconds;
-
-        // Calculate the difference
         double delay = video_timestamp - actual_audio_time;
 
-        if (delay > 0.1) { // Video is > 100ms early?
+        std::cout << "Video TS: " << video_timestamp
+                  << " | Audio TS: " << actual_audio_time
+                  << " | Delay: " << delay << " seconds." << std::endl;
+
+        const double SMALL_EARLY_THRESHOLD = 0.010;
+        const double DROP_LATE_THRESHOLD    = -0.050;
+        const double MAX_WAIT_MS            = 50.0;
+
+        if (delay > SMALL_EARLY_THRESHOLD) {
             // Wait for the audio to catch up
-            SDL_Delay((Uint32)(delay * 100.0));
-        } else if (delay < -0.1) { // Video is > 100ms late?
+            double wait_ms = delay * 1000.0;
+            if (wait_ms > MAX_WAIT_MS) wait_ms = MAX_WAIT_MS;
+            SDL_Delay((Uint32)wait_ms);
+        } else if (delay < -DROP_LATE_THRESHOLD) { // Video is > 100ms late?
             // This frame is too old, drop it and get the next one
-            // We just return from this function and don't render this frame
             std::cout << "Dropping late video frame to catch up." << std::endl;
             return;
         }
         // If we're here, the frame is in sync (or only slightly late), so we render it.
 
-        // --- Update Texture (Your code is fine) ---
         if (!m_videoTexture) {
             m_videoTexture = SDL_CreateTexture(m_Renderer,
                                              SDL_PIXELFORMAT_RGBA32,

@@ -282,7 +282,6 @@ PacketType M3U8StreamStrategy::processNextFrame(VideoFrame& outFrame) {
 }
 
 void M3U8StreamStrategy::handleVideoPacket(AVPacket* packet, AVFrame* yuvFrame, VideoFrame& outFrame) {
-    // --- VIDEO PACKET ---
     if (avcodec_send_packet(videoCodecCtx, packet) == 0) {
         int ret = avcodec_receive_frame(videoCodecCtx, yuvFrame);
 
@@ -349,7 +348,7 @@ void M3U8StreamStrategy::handleAudioPacket(AVPacket* packet) {
         // This is the magic step. SDL will take this data and play it on its own thread.
         // The first argument '1' is the audio device ID, which SDLWindow opens.
         if (audioCallback(audioResampleBuffer, bytes_to_queue)) {
-            std::cerr << "Audio callback failed to queue audio data." << std::endl;
+            // std::cerr << "Audio callback failed to queue audio data." << std::endl;
         }
 
         // --- 4. Update the audio clock ---

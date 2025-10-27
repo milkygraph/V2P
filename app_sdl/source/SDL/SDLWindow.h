@@ -25,10 +25,11 @@ private:
     SDL_Window* m_Window = nullptr;
     SDL_Renderer* m_Renderer = nullptr;
     SDL_Texture* m_videoTexture = nullptr;
-    SDL_AudioDeviceID m_audioDeviceID = 0; // <-- NEW
+    SDL_AudioDeviceID m_audioDeviceID = 0;
+    SDL_AudioSpec m_audioSpec = {};
 
     // Engine/State members
-    std::unique_ptr<VideoStreamer> m_streamer; // <-- NEW
+    std::unique_ptr<VideoStreamer> m_streamer;
     Uint32 m_playbackStartTime = 0;
     bool m_keepWindowOpen = true;
 };

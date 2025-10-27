@@ -7,6 +7,8 @@ VideoStreamer::VideoStreamer(std::unique_ptr<IStreamStrategy> strategy)
       isRunning(false) {}
 
 VideoStreamer::~VideoStreamer() {
+    isRunning = false;
+    thread.join();
     close();
 }
 
@@ -45,7 +47,6 @@ bool VideoStreamer::getNextVideoFrame(VideoFrame& outFrame)
 {
     if (streamStrategy) {
         auto result = videoQueue.tryPop(outFrame);
-        std::cout << "getNextVideoFrame result: " << result << std::endl;
         return true;
     }
     return true;
